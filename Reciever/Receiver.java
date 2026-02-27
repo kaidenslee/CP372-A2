@@ -26,7 +26,7 @@ public class Receiver{
     this.windowSize = windowSize;
     this.RN = RN;
 
-    this.socket = new DataGramSocket(this.rcvDataPort);
+    this.socket = new DataGramSocket(this.rcv_data_port);
     }
 
     private void sendAck(int seq){
@@ -57,11 +57,30 @@ public class Receiver{
 
   }
   private void stop_and_wait(){
+    try(FileOutputStream fos = new FileOutputStream(output_file)){
+      int expectedSeq = 1;
+      int lastInorder = 0;
+
+      while (placeholder){
+        DatagramPacket input = new DatagramPacket(new byte[PACKET_SIZE], PACKET_SIZE);
+        socket.receive(input);
+        DSPacket packet = new DSPacket(input.getData());
+        byte type = packet.getType();
+        int seq = packet.getSeqNum();
+
+        if (type == DSPacket.TYPE_DATA){
+          //check if seq == expected seq, write payload, send ack, increment expectedseq
+          //if not, do not write and resent ack for lastinorder
+        
 
 
   }
 
   private void go_back_n(){
+    //ensure window size N is multiple of 4, n <= total packet size. 
+    //use buffering. if within window, buffer if not received, dilver in order while possible
+    //send one cumulative ack 
+    //discard below ro above window, resend cumaltive ack
 
   }
 
