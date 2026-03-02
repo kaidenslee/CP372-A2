@@ -1,3 +1,10 @@
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+
+
 //handshake, data transfer (stop and wait, go back n), EOT 
 //if window is omitted -> stop and wait 
 //if window size is provided --> go back n
@@ -18,18 +25,18 @@ public class Receiver{
   private int windowSize; 
   private int ackCount = 0;
 
-  public Receiver(InetAddress sender_ip, int sender_ack_port, int rcv_data_port, String output_file, int RN, int windowSize){
-    this sender_ip = sender_ip;
+  public Receiver(InetAddress sender_ip, int sender_ack_port, int rcv_data_port, String output_file, int RN, int windowSize) throws IOException{
+    this.sender_ip = sender_ip;
     this.sender_ack_port = sender_ack_port;
     this.rcv_data_port = rcv_data_port;
     this.output_file = output_file;
     this.windowSize = windowSize;
     this.RN = RN;
 
-    this.socket = new DataGramSocket(this.rcv_data_port);
+    this.socket = new DatagramSocket(this.rcv_data_port);
     }
 
-    private void sendAck(int seq){
+    private void sendAck(int seq) throws IOException{
       ackCount++;
       if(ChaosEngine.shouldDrop(ackCount, RN)){
         return;//simulate loss
@@ -41,9 +48,8 @@ public class Receiver{
 
     }
   //handshake. recieves SOT (type 0, seq 0), sends ACK (type 2, seq 0)
-  private void handshake(){
-    boolean flag = true;
-    while(flag){
+  private void handshake()throws IOException{
+    while(true){
       DatagramPacket input = new DatagramPacket(new byte[PACKET_SIZE], PACKET_SIZE);
       socket.receive(input);
       DSPacket packet = new DSPacket(input.getData());
@@ -52,16 +58,18 @@ public class Receiver{
         sendAck(0);
         return;
 
-      }
+      }else{
+        //ignore - add message to cl?
+    }
     }
 
   }
-  private void stop_and_wait(){
+  private void stop_and_wait()throws IOException{
     try(FileOutputStream fos = new FileOutputStream(output_file)){
       int expectedSeq = 1;
-      int lastInorder = 0;
+      int lastInOrder = 0;
 
-      while (placeholder){
+      while (true){
         DatagramPacket input = new DatagramPacket(new byte[PACKET_SIZE], PACKET_SIZE);
         socket.receive(input);
         DSPacket packet = new DSPacket(input.getData());
@@ -69,14 +77,88 @@ public class Receiver{
         int seq = packet.getSeqNum();
 
         if (type == DSPacket.TYPE_DATA){
+          if(seq == expectedSeq){
+            fos.write(packet.getPayload());
+            lastInOrder = expectedSeq;
+            sendAck(seq);
+            expectedSeq = (expectedSeq + 1) % MOD;
+          }else{
+            sendAck(lastInOrder);
+          }else if(type == DSPacket.TYPE_EOT){
+            sendAck(seq);
+            return;
+        }else{
+          //ignore - print to cl?
           //check if seq == expected seq, write payload, send ack, increment expectedseq
           //if not, do not write and resent ack for lastinorder
         
-
+        }
+      }
+    }
 
   }
 
-  private void go_back_n(){
+  private void go_back_n() throws IOException {
+    if (windowSize <= 0){
+      stop_and_wait();
+      return;
+  }
+        if(windowSize > MOD){
+          windowSize = MOD;
+        }
+        try(FileOutputStream fos = new FileOutputStream(output_file)){
+      int expectedSeq = 1;
+      int lastDelivered = 0;
+
+          DSPacket[] buffer = new DSPacket[MOD];
+          boolean[] received = new boolean[MOD];
+
+          while(true){
+            DatagramPacket input = new DatagramPacket(new byte[PACKET_SIZE], PACKET_SIZE);
+            socket.receive(input);
+            DSPacket packet = new DSPacket(input.getData());
+            byte type = packet.getType();
+            int seq = packet.getSeqNum();
+
+            if(type == DSPacket.TYPE_DATA){
+              if(((seq - expectedSeq + MOD)%MOD) < windowSize){
+                if(!received[seq]){
+                  buffer[seq] = packet;
+                  received[seq] = true;
+                }else{
+                  //print to cl if going to
+                }
+
+              }
+                boolean moved = false; 
+                while(received[expectedSeq]){
+                  DSPacket nextUp = buffer[expectedSeq];
+                  fos.write(nextUp.getPayload());
+                  buffer[expectedSeq] = null;
+                  received[expectedSeq] = false;
+
+                  lastDelivered = expectedSeq;
+                  expectedSeq = (expectedSeq + 1) % MOD;
+                  moved = true;
+                }
+                sendAck(lastDelivered);
+                if(type == DSPacket.TYPE_EOT){
+                  sendAck(seq);
+
+                  while (received[expectedSeq]){
+                    DSPacket nextUp = buffer[expectedSeq];
+                    fos.write(nextUp.getPayload());
+                    buffer[expectedSeq] = false;
+                    lastDelivered = expectedSeq;
+                    expectedSeq = (expectedSeq + 1) % MOD;
+                  }
+                  return;
+                }
+              }
+            }
+
+          }//yo fix these closing brackets ??
+  
     //ensure window size N is multiple of 4, n <= total packet size. 
     //use buffering. if within window, buffer if not received, dilver in order while possible
     //send one cumulative ack 
@@ -96,6 +178,20 @@ public class Receiver{
 
 
 public static void main(String[] args){
+  try{
+    InetAddress sender_ip = InetAddress.getByName(args[0];
+    int sender_ack_port = Integer.parseInt(args[1]);
+    int rcv_data_port = Integer.parseInt(args[2]);
+    String output_file = args[3];
+    int RN = Integer.parseInt(args[4]);
+    int windowSize = 0;
+    if(args.length >= 6){
+      windowSize = Integer.parseInt(args[5]);
+    }
+
+    Receiver receiver = new Receiver(sender_ip, sender_ack_port, rcv_data_port, output_file, RN, windowSize);
+    receiver.run();
+
 }
    
         
