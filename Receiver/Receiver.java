@@ -41,18 +41,19 @@ public class Receiver{
   
   
 //for sending an ACK paket with given seq number, 
-  private void sendAck(int seq) throws IOException{
+  private boolean sendAck(int seq) throws IOException{
     ackCount++;
     if(ChaosEngine.shouldDrop(ackCount, RN)){//chaosEngine decides if ACK needs to be dropped
       System.out.println("receiver: ACK " + seq + " was dropped by ChaosEngine");
-      return;//simulate loss
+      return false;//simulate loss
     }
     DSPacket ack = new DSPacket(DSPacket.TYPE_ACK, seq, null);
     byte [] ackBytes = ack.toBytes();
 
     DatagramPacket datagram_packet = new DatagramPacket(ackBytes, ackBytes.length, sender_ip, sender_ack_port);
     socket.send(datagram_packet);
-	  System.out.println("receiver: ACK " + seq + " sent");
+	System.out.println("receiver: ACK " + seq + " sent");
+	return true;
 
   }
   
@@ -103,10 +104,14 @@ public class Receiver{
       DSPacket packet = new DSPacket(input.getData());
 
       if (packet.getType() == DSPacket.TYPE_SOT && packet.getSeqNum() == 0){
-        sendAck(0);
-		System.out.println("receiver: SOT received, ACK 0 sent");
-        return;
-
+		boolean sent = sendAck(0);
+		if(sent){
+			System.out.println("receiver: SOT received, ACK 0 sent");
+			return;
+		}
+		else{
+			System.out.println("receiver: SOT received, but ACK 0 was dropped");
+		}
       }else{
         System.out.println("receiver: non-SOT packet was ignored during handshake. Type was " + packet.getType() + ", seq was " + packet.getSeqNum());
 		  
@@ -163,9 +168,9 @@ public class Receiver{
 //go back n receiver 
 //buffers out of order packets within window and deliver in order when able
   private void go_back_n() throws IOException {
-        if (windowSize <= 0 || windowSize > 80 || (windowSize % 4) != 0) {
+        if (windowSize <= 0 || windowSize > MOD || (windowSize % 4) != 0) {
             throw new IllegalArgumentException(
-                "Receiver window_size must be a positive multiple of 4 and <= 80."
+                "Receiver window_size must be a positive multiple of 4 and <= 128."
             );
         }
 
