@@ -43,12 +43,14 @@ public class Receiver{
     private void sendAck(int seq) throws IOException{
       ackCount++;
       if(ChaosEngine.shouldDrop(ackCount, RN)){//chaosEngine decides if ACK needs to be dropped
-        return;//simulate loss
+		  System.out.println("receiver: ACK " + seq + " was dropped by ChaosEngine");
+          return;//simulate loss
       }
       DSPacket ack = new DSPacket(DSPacket.TYPE_ACK, seq, null);
       byte [] ackBytes = ack.toBytes();
       DatagramPacket datagram_packet = new DatagramPacket(ackBytes, ackBytes.length, sender_ip, sender_ack_port);
       socket.send(datagram_packet);
+	  System.out.println("receiver: ACK " + seq + " sent");
 
     }
     
@@ -62,10 +64,12 @@ public class Receiver{
 
       if (packet.getType() == DSPacket.TYPE_SOT && packet.getSeqNum() == 0){
         sendAck(0);
+		System.out.println("receiver: SOT received, ACK 0 sent");
         return;
 
       }else{
-        //ignore - add message to cl?
+        System.out.println("receiver: non-SOT packet was ignored during handshake. Type was " + packet.getType() + ", seq was " + packet.getSeqNum());
+		  
     }
     }
 
@@ -76,6 +80,7 @@ public class Receiver{
     try(FileOutputStream fos = new FileOutputStream(output_file)){
       int expectedSeq = 1;
       int lastInOrder = 0;
+	  System.out.println("receiver: Stop-and-wait initiated");
 
       while (true){
         DatagramPacket input = new DatagramPacket(new byte[PACKET_SIZE], PACKET_SIZE);
@@ -85,21 +90,25 @@ public class Receiver{
         int seq = packet.getSeqNum();
 
         if (type == DSPacket.TYPE_DATA){
+			System.out.println("receiver: DATA received seq " + seq + ", expected " + expectedSeq);
           if(seq == expectedSeq){
             fos.write(packet.getPayload());
+			  System.out.println("receiver: Packet " + seq + " accepted and wrote to file");
             lastInOrder = expectedSeq;
             sendAck(seq);
             expectedSeq = (expectedSeq + 1) % MOD;
           }else{
-            sendAck(lastInOrder);
+			  System.out.println("receiver: Packet " + seq + " is duplicate or out of order, ACK " + lastInOrder + " is being resent");
+			  sendAck(lastInOrder);
           }
           }else if(type == DSPacket.TYPE_EOT){
+			System.out.println("receiver: EOT received seq " + seq);
             sendAck(seq);
+			System.out.println("receiver: Complete, closing receiver");
             return;
         }else{
-          //ignore - print to cl?
-          //check if seq == expected seq, write payload, send ack, increment expectedseq
-          //if not, do not write and resent ack for lastinorder
+			System.out.println("receiver: ignored packet type " + type + ", seq " + seq);
+          //ignore 
         
         }
       }
@@ -114,11 +123,13 @@ public class Receiver{
           windowSize = MOD;
         }
         try(FileOutputStream fos = new FileOutputStream(output_file)){
-      int expectedSeq = 1;
-      int lastDelivered = 0;
+      		int expectedSeq = 1;
+      		int lastDelivered = 0;
 
-          DSPacket[] buffer = new DSPacket[MOD];
-          boolean[] received = new boolean[MOD];
+          	DSPacket[] buffer = new DSPacket[MOD];
+          	boolean[] received = new boolean[MOD];
+
+			System.out.println("receiver: Go-back-N initiated with window size " + windowSize);
 
           while(true){
             DatagramPacket input = new DatagramPacket(new byte[PACKET_SIZE], PACKET_SIZE);
@@ -128,13 +139,18 @@ public class Receiver{
             int seq = packet.getSeqNum();
 
             if(type == DSPacket.TYPE_DATA){
-              if(((seq - expectedSeq + MOD)%MOD) < windowSize){
-                if(!received[seq]){
-                  buffer[seq] = packet;
-                  received[seq] = true;
-                }
-                }else {
-                	//outside window, ignore
+				System.out.println("receiver: DATA received seq " + seq + ", expected" + expectedSeq);
+              	if(((seq - expectedSeq + MOD)%MOD) < windowSize){
+                	if(!received[seq]){
+                  		buffer[seq] = packet;
+                  		received[seq] = true;
+						System.out.println("receiver: buffered packet seq " + seq);
+                	}else {
+						System.out.println("receiver: duplicate packet seq " + seq + " has already been buffered");
+					}
+				}else{
+					System.out.println("receiver: packet seq " + seq + " is outside receiver window and has been discarded");
+                	
                 }
 
               
@@ -144,14 +160,18 @@ public class Receiver{
                   buffer[expectedSeq] = null;
                   received[expectedSeq] = false;
 
+				  System.out.println("receiver: delivered buffered packet seq " + expectedSeq);
+
                   lastDelivered = expectedSeq;
                   expectedSeq = (expectedSeq + 1) % MOD;
                 }
-                
+
+				System.out.println("receiver: sending cumulative ACK " + lastDelivered);
                 sendAck(lastDelivered);
                 
             } else if(type == DSPacket.TYPE_EOT){
-                  sendAck(seq);
+				System.out.println("receiver: EOT received seq " + seq);
+				sendAck(seq);
 
                   while (received[expectedSeq]){
                     DSPacket nextUp = buffer[expectedSeq];
@@ -161,8 +181,11 @@ public class Receiver{
                     lastDelivered = expectedSeq;
                     expectedSeq = (expectedSeq + 1) % MOD;
                   }
+
+				  System.out.println("receiver: complete, closing receiver");
                   return;
                 } else {
+					System.out.println("receiver: ignored packet type " + type + ", seq " + seq);
                 	//ignore others
                 }
               }
@@ -176,6 +199,8 @@ public class Receiver{
 
 //runs receiver via handshake, choosing between stop and wait or go back n, and closing socket
   public void run()throws IOException{
+	System.out.println("receiver is listening on port" + rcv_data_port);
+	
     handshake();
     if(windowSize <= 0){
       stop_and_wait();
@@ -183,12 +208,13 @@ public class Receiver{
       go_back_n();
     }
     socket.close();
+	System.out.println("receiver: socket closed");
   }
 
 public static void main(String[] args) throws Exception{
 	 if (args.length < 5) {
 	    	return; 
-	    	//add error message
+		 	System.out.println("receiver: formatted incorrectly");
 	    }
     InetAddress sender_ip = InetAddress.getByName(args[0]);
     int sender_ack_port = Integer.parseInt(args[1]);
