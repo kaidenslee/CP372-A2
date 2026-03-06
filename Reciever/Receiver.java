@@ -8,7 +8,6 @@ import java.net.InetAddress;
 
 //if window is omitted -> stop and wait 
 //if window size is provided --> go back n
-//reminder to add command line arguments - or just decide if you want to add them 
 
 //receiver is designed to handle handshake, data transfer (stop and wait or go back n), and EOT
 public class Receiver{
