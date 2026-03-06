@@ -213,8 +213,8 @@ public class Receiver{
 
 public static void main(String[] args) throws Exception{
 	 if (args.length < 5) {
-	    	return; 
 		 	System.out.println("receiver: formatted incorrectly");
+	    	return; 
 	    }
     InetAddress sender_ip = InetAddress.getByName(args[0]);
     int sender_ack_port = Integer.parseInt(args[1]);
