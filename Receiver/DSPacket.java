@@ -1,86 +1,161 @@
 import java.nio.ByteBuffer;
 
 /**
- * DS-FTP Packet Wrapper
- * --------------------
- * Handles conversion between protocol fields and raw 128-byte UDP datagrams.
+ * DSPacket
+ * --------
+ * Represents a DS-FTP protocol packet used in CP372 Assignment 2.
  *
- * All packets:
- * - Are exactly 128 bytes on the wire
- * - Use big-endian encoding for the payload length
- * - Follow the DS-FTP packet contract strictly
+ * Packet format (128 bytes total):
+ *
+ *  -----------------------------------------
+ *  | type (1) | seq (1) | length (2) | data |
+ *  -----------------------------------------
+ *
+ * type   : packet type (SOT, DATA, ACK, EOT)
+ * seq    : sequence number (0–127)
+ * length : payload length (0–124)
+ * data   : payload bytes (only used for DATA packets)
+ *
+ * Remaining unused bytes are padded with zeros.
  */
 public class DSPacket {
 
-    // Fixed packet sizes
-    public static final int MAX_PACKET_SIZE  = 128;
+    /* -------------------------
+       Protocol constants
+       ------------------------- */
+
+    // Maximum packet size required by the protocol
+    public static final int MAX_PACKET_SIZE = 128;
+
+    // Maximum payload size allowed in DATA packets
     public static final int MAX_PAYLOAD_SIZE = 124;
 
-    // Packet types
-    public static final byte TYPE_SOT  = 0;
-    public static final byte TYPE_DATA = 1;
-    public static final byte TYPE_ACK  = 2;
-    public static final byte TYPE_EOT  = 3;
+    // Packet type identifiers
+    public static final byte TYPE_SOT  = 0;   // Start Of Transmission
+    public static final byte TYPE_DATA = 1;   // Data packet
+    public static final byte TYPE_ACK  = 2;   // Acknowledgment
+    public static final byte TYPE_EOT  = 3;   // End Of Transmission
 
-    // Header fields
-    private byte type;
-    private byte seqNum;
-    private short length;   // Payload length in bytes (0–124)
-    private byte[] payload;
+
+    /* -------------------------
+       Packet fields
+       ------------------------- */
+
+    private byte type;        // Packet type
+    private byte seqNum;      // Sequence number (0–127)
+    private short length;     // Payload length
+    private byte[] payload;   // Payload data
+
+
+    /* --------------------------------------------------------
+       Constructor used when SENDING packets
+       -------------------------------------------------------- */
 
     /**
-     * Constructor for creating a packet to SEND.
+     * Creates a packet to be transmitted over the network.
      *
-     * Usage:
-     * - DATA packets: provide payload bytes (length 1–124)
-     * - SOT / ACK / EOT packets: pass null or empty data
+     * DATA packets:
+     *  - Must contain payload of 1..124 bytes
      *
-     * @param type Packet type (TYPE_SOT, TYPE_DATA, TYPE_ACK, TYPE_EOT)
-     * @param seqNum Sequence number (automatically modulo 128)
-     * @param data Payload bytes (null or empty for control packets)
+     * Control packets (SOT, ACK, EOT):
+     *  - Must contain no payload
      */
     public DSPacket(byte type, int seqNum, byte[] data) {
+
         this.type = type;
+
+        // Sequence numbers operate modulo 128
         this.seqNum = (byte) (seqNum % 128);
 
-        // Control packets should have no payload
-        this.payload = (data != null) ? data : new byte[0];
+        if (type == TYPE_DATA) {
+
+            // Validate DATA payload size
+            if (data == null || data.length <= 0 || data.length > MAX_PAYLOAD_SIZE) {
+                throw new IllegalArgumentException(
+                    "DATA payload must be between 1 and 124 bytes."
+                );
+            }
+
+            this.payload = data;
+
+        } else {
+
+            // Control packets contain no payload
+            this.payload = new byte[0];
+        }
+
         this.length = (short) this.payload.length;
     }
 
+
+    /* --------------------------------------------------------
+       Constructor used when RECEIVING packets
+       -------------------------------------------------------- */
+
     /**
-     * Constructor for parsing a RECEIVED 128-byte datagram.
-     *
-     * @param rawBytes The raw byte array from DatagramPacket
-     * @throws IllegalArgumentException if payload length is invalid
+     * Parses a received 128-byte UDP datagram into a DSPacket object.
      */
     public DSPacket(byte[] rawBytes) {
 
         ByteBuffer bb = ByteBuffer.wrap(rawBytes);
 
-        this.type   = bb.get();
+        this.type = bb.get();
         this.seqNum = bb.get();
         this.length = bb.getShort();
 
-        // Defensive validation of payload length
+        /* ---- Validate packet type ---- */
+
+        if (this.type != TYPE_SOT &&
+            this.type != TYPE_DATA &&
+            this.type != TYPE_ACK &&
+            this.type != TYPE_EOT) {
+
+            throw new IllegalArgumentException(
+                "Invalid packet type: " + this.type
+            );
+        }
+
+        /* ---- Validate payload length ---- */
+
         if (this.length < 0 || this.length > MAX_PAYLOAD_SIZE) {
             throw new IllegalArgumentException(
                 "Invalid payload length: " + this.length
             );
         }
 
+        /* ---- Control packets must have zero payload ---- */
+
+        if ((this.type == TYPE_SOT ||
+             this.type == TYPE_ACK ||
+             this.type == TYPE_EOT) && this.length != 0) {
+
+            throw new IllegalArgumentException(
+                "Control packets must have payload length 0."
+            );
+        }
+
+        /* ---- DATA packets must contain payload ---- */
+
+        if (this.type == TYPE_DATA && this.length <= 0) {
+            throw new IllegalArgumentException(
+                "DATA packets must contain payload."
+            );
+        }
+
+        /* ---- Read payload ---- */
+
         this.payload = new byte[this.length];
         bb.get(this.payload);
     }
 
+
+    /* --------------------------------------------------------
+       Convert packet to 128-byte datagram
+       -------------------------------------------------------- */
+
     /**
-     * Converts this packet into a fixed-size 128-byte array
-     * suitable for DatagramPacket transmission.
-     *
-     * Note:
-     * - ByteBuffer.allocate() zero-fills unused bytes automatically.
-     *
-     * @return 128-byte array representing the packet
+     * Converts this packet into a fixed 128-byte array suitable
+     * for UDP transmission.
      */
     public byte[] toBytes() {
 
@@ -91,21 +166,22 @@ public class DSPacket {
         bb.putShort(length);
         bb.put(payload);
 
-        // Remaining bytes are automatically zero-filled
+        // Remaining bytes are automatically padded with zeros
         return bb.array();
     }
 
-    // ------------------------
-    // Getters
-    // ------------------------
+
+    /* --------------------------------------------------------
+       Getters
+       -------------------------------------------------------- */
 
     public byte getType() {
         return type;
     }
 
     /**
-     * Returns the sequence number as an unsigned integer (0–255).
-     * This avoids Java's signed byte interpretation.
+     * Returns sequence number as unsigned integer (0-255).
+     * Java bytes are signed, so this prevents negative values.
      */
     public int getSeqNum() {
         return seqNum & 0xFF;
