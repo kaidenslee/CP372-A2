@@ -68,7 +68,7 @@ public class Receiver{
 
         try {
             oldTimeout = socket.getSoTimeout();
-            socket.setSoTimeout(300);
+            socket.setSoTimeout(2000); // Wait up to 2 seconds for potential duplicate EOT packets
             timeoutChanged = true;
 
             boolean done = false;
