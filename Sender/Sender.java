@@ -135,9 +135,9 @@ public class Sender {
 
                 if (cfg.gbnEnabled) {
                     cfg.windowSize = Integer.parseInt(args[5]);
-                    if (cfg.windowSize <= 0 || cfg.windowSize > 80 || (cfg.windowSize % 4) != 0) {
+                    if (cfg.windowSize <= 0 || cfg.windowSize > 128 || (cfg.windowSize % 4) != 0) {
                         ok = false;
-                        System.out.println("Error: window_size must be a positive multiple of 4 and <= 80.");
+                        System.out.println("Error: window_size must be a positive multiple of 4 and <= 128.");
                         printUsage();
                     }
                 }
